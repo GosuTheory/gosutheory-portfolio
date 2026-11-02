@@ -1,0 +1,20 @@
+{
+  "formal-logic": {
+    "lanes": ["local", "subagent", "remote"],
+    "oracle": "local",
+    "subagent": { "agent": "formal-logic-critic" },
+    "remote": {
+      "enabled_when": "token",
+      "server": "reasoning_remote",
+      "url_env": "REASONING_SERVICES_URL",
+      "token_env": "REASONING_SERVICES_TOKEN"
+    }
+  },
+  "graph-of-thought": {
+    "lanes": ["local", "subagent", "remote"],
+    "oracle": null,
+    "rule_adherence_oracle": "local",
+    "subagent": { "agent": "graph-of-thought-critic" },
+    "remote": { "enabled_when": "token", "server": "reasoning_remote" }
+  }
+}
