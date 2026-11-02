@@ -1,0 +1,44 @@
+{"id": "mp", "op": "entails", "raw": "benchmark:mp", "premises": ["a", "a -> b"], "conclusion": "b", "gold": "entails", "tags": ["control"]}
+{"id": "mt", "op": "entails", "raw": "benchmark:mt", "premises": ["a -> b", "~b"], "conclusion": "~a", "gold": "entails", "tags": ["control"]}
+{"id": "disj_syllogism", "op": "entails", "raw": "benchmark:disj_syllogism", "premises": ["a | b", "~a"], "conclusion": "b", "gold": "entails", "tags": ["control"]}
+{"id": "hyp_syllogism", "op": "entails", "raw": "benchmark:hyp_syllogism", "premises": ["a -> b", "b -> c"], "conclusion": "a -> c", "gold": "entails", "tags": ["control"]}
+{"id": "conjunction", "op": "entails", "raw": "benchmark:conjunction", "premises": ["a", "b"], "conclusion": "a & b", "gold": "entails", "tags": ["control"]}
+{"id": "contrapositive", "op": "entails", "raw": "benchmark:contrapositive", "premises": ["a -> b"], "conclusion": "~b -> ~a", "gold": "entails", "tags": ["control"]}
+{"id": "affirming_consequent", "op": "entails", "raw": "benchmark:affirming_consequent", "premises": ["a -> b", "b"], "conclusion": "a", "gold": "does_not_entail", "tags": ["control", "fallacy"]}
+{"id": "denying_antecedent", "op": "entails", "raw": "benchmark:denying_antecedent", "premises": ["a -> b", "~a"], "conclusion": "~b", "gold": "does_not_entail", "tags": ["control", "fallacy"]}
+{"id": "mt_chain4", "op": "entails", "raw": "benchmark:mt_chain4", "premises": ["a -> b", "b -> c", "c -> d", "~d"], "conclusion": "~a", "gold": "entails", "tags": ["modus_tollens_chain"]}
+{"id": "mt_chain5", "op": "entails", "raw": "benchmark:mt_chain5", "premises": ["a -> b", "b -> c", "c -> d", "d -> e", "~e"], "conclusion": "~a", "gold": "entails", "tags": ["modus_tollens_chain"]}
+{"id": "mt_chain6", "op": "entails", "raw": "benchmark:mt_chain6", "premises": ["a -> b", "b -> c", "c -> d", "d -> e", "e -> f", "~f"], "conclusion": "~a", "gold": "entails", "tags": ["modus_tollens_chain"]}
+{"id": "mt_chain7", "op": "entails", "raw": "benchmark:mt_chain7", "premises": ["p1 -> p2", "p2 -> p3", "p3 -> p4", "p4 -> p5", "p5 -> p6", "p6 -> p7", "~p7"], "conclusion": "~p1", "gold": "entails", "tags": ["modus_tollens_chain"]}
+{"id": "mt_chain_invalid", "op": "entails", "raw": "benchmark:mt_chain_invalid", "premises": ["a -> b", "b -> c", "c -> d", "~d"], "conclusion": "b", "gold": "does_not_entail", "tags": ["modus_tollens_chain"]}
+{"id": "exactly_one_a", "op": "entails", "raw": "benchmark:exactly_one_a", "premises": ["a | b | c", "~(a & b)", "~(a & c)", "~(b & c)", "a"], "conclusion": "~b & ~c", "gold": "entails", "tags": ["parity"]}
+{"id": "exactly_one_c", "op": "entails", "raw": "benchmark:exactly_one_c", "premises": ["a | b | c", "~(a & b)", "~(a & c)", "~(b & c)", "~a", "~b"], "conclusion": "c", "gold": "entails", "tags": ["parity"]}
+{"id": "xor_chain", "op": "entails", "raw": "benchmark:xor_chain", "premises": ["(a | b) & ~(a & b)", "(b | c) & ~(b & c)", "a"], "conclusion": "c", "gold": "entails", "tags": ["parity"]}
+{"id": "xor_underdetermined", "op": "entails", "raw": "benchmark:xor_underdetermined", "premises": ["(a | b) & ~(a & b)"], "conclusion": "a", "gold": "does_not_entail", "tags": ["parity"]}
+{"id": "pigeonhole_3_2", "op": "entails", "raw": "benchmark:pigeonhole_3_2", "premises": ["p1h1 | p1h2", "p2h1 | p2h2", "p3h1 | p3h2", "~(p1h1 & p2h1)", "~(p1h1 & p3h1)", "~(p2h1 & p3h1)", "~(p1h2 & p2h2)", "~(p1h2 & p3h2)", "~(p2h2 & p3h2)"], "conclusion": "p1h1", "gold": "inconsistent_premises", "tags": ["pigeonhole"]}
+{"id": "pigeonhole_2_1", "op": "entails", "raw": "benchmark:pigeonhole_2_1", "premises": ["p1h1", "p2h1", "~(p1h1 & p2h1)"], "conclusion": "p1h1", "gold": "inconsistent_premises", "tags": ["pigeonhole"]}
+{"id": "nested_mp", "op": "entails", "raw": "benchmark:nested_mp", "premises": ["(a -> b) -> c", "a -> b"], "conclusion": "c", "gold": "entails", "tags": ["nested_implication"]}
+{"id": "nested_curry", "op": "entails", "raw": "benchmark:nested_curry", "premises": ["a -> (b -> c)", "a", "b"], "conclusion": "c", "gold": "entails", "tags": ["nested_implication"]}
+{"id": "nested_mt", "op": "entails", "raw": "benchmark:nested_mt", "premises": ["(a -> b) -> c", "~c"], "conclusion": "~(a -> b)", "gold": "entails", "tags": ["nested_implication"]}
+{"id": "nested_invalid", "op": "entails", "raw": "benchmark:nested_invalid", "premises": ["a -> (b -> c)", "b"], "conclusion": "c", "gold": "does_not_entail", "tags": ["nested_implication"]}
+{"id": "peirce_tautology", "op": "entails", "raw": "benchmark:peirce_tautology", "premises": [], "conclusion": "((a -> b) -> a) -> a", "gold": "entails", "tags": ["nested_implication", "tautology"]}
+{"id": "vacuous_true", "op": "entails", "raw": "benchmark:vacuous_true", "premises": ["~a"], "conclusion": "a -> b", "gold": "entails", "tags": ["vacuous_truth"]}
+{"id": "vacuous_contradiction_consequent", "op": "entails", "raw": "benchmark:vacuous_contradiction_consequent", "premises": ["~a"], "conclusion": "a -> (b & ~b)", "gold": "entails", "tags": ["vacuous_truth"]}
+{"id": "vacuous_invalid", "op": "entails", "raw": "benchmark:vacuous_invalid", "premises": ["~a"], "conclusion": "b -> a", "gold": "does_not_entail", "tags": ["vacuous_truth"]}
+{"id": "material_true_consequent", "op": "entails", "raw": "benchmark:material_true_consequent", "premises": ["b"], "conclusion": "a -> b", "gold": "entails", "tags": ["material_implication"]}
+{"id": "material_true_antecedent", "op": "entails", "raw": "benchmark:material_true_antecedent", "premises": ["a"], "conclusion": "b -> a", "gold": "entails", "tags": ["material_implication"]}
+{"id": "material_def_fwd", "op": "entails", "raw": "benchmark:material_def_fwd", "premises": ["~a | b"], "conclusion": "a -> b", "gold": "entails", "tags": ["material_implication"]}
+{"id": "material_def_bwd", "op": "entails", "raw": "benchmark:material_def_bwd", "premises": ["a -> b"], "conclusion": "~a | b", "gold": "entails", "tags": ["material_implication"]}
+{"id": "material_converse_invalid", "op": "entails", "raw": "benchmark:material_converse_invalid", "premises": ["a -> b"], "conclusion": "b -> a", "gold": "does_not_entail", "tags": ["material_implication"]}
+{"id": "demorgan_and", "op": "entails", "raw": "benchmark:demorgan_and", "premises": ["~(a & b)"], "conclusion": "~a | ~b", "gold": "entails", "tags": ["boolean"]}
+{"id": "demorgan_or", "op": "entails", "raw": "benchmark:demorgan_or", "premises": ["~(a | b)"], "conclusion": "~a & ~b", "gold": "entails", "tags": ["boolean"]}
+{"id": "distribute_and_over_or", "op": "entails", "raw": "benchmark:distribute_and_over_or", "premises": ["a & (b | c)"], "conclusion": "(a & b) | (a & c)", "gold": "entails", "tags": ["boolean"]}
+{"id": "distribute_or_over_and", "op": "entails", "raw": "benchmark:distribute_or_over_and", "premises": ["(a | b) & (a | c)"], "conclusion": "a | (b & c)", "gold": "entails", "tags": ["boolean"]}
+{"id": "or_does_not_give_and", "op": "entails", "raw": "benchmark:or_does_not_give_and", "premises": ["a | b"], "conclusion": "a & b", "gold": "does_not_entail", "tags": ["boolean"]}
+{"id": "iff_mp", "op": "entails", "raw": "benchmark:iff_mp", "premises": ["a <-> b", "a"], "conclusion": "b", "gold": "entails", "tags": ["biconditional"]}
+{"id": "iff_mt", "op": "entails", "raw": "benchmark:iff_mt", "premises": ["a <-> b", "~a"], "conclusion": "~b", "gold": "entails", "tags": ["biconditional"]}
+{"id": "iff_underdetermined", "op": "entails", "raw": "benchmark:iff_underdetermined", "premises": ["a <-> b"], "conclusion": "a", "gold": "does_not_entail", "tags": ["biconditional"]}
+{"id": "iff_transitive", "op": "entails", "raw": "benchmark:iff_transitive", "premises": ["a <-> b", "b <-> c"], "conclusion": "a <-> c", "gold": "entails", "tags": ["biconditional"]}
+{"id": "resolution_c", "op": "entails", "raw": "benchmark:resolution_c", "premises": ["a | b", "~a | c", "~b | c"], "conclusion": "c", "gold": "entails", "tags": ["resolution"]}
+{"id": "resolution_a", "op": "entails", "raw": "benchmark:resolution_a", "premises": ["a | b", "~b | c", "~c"], "conclusion": "a", "gold": "entails", "tags": ["resolution"]}
+{"id": "unit_resolution", "op": "entails", "raw": "benchmark:unit_resolution", "premises": ["a | b | c", "~a", "~b"], "conclusion": "c", "gold": "entails", "tags": ["resolution"]}
