@@ -6,6 +6,7 @@ the bottom is a thin shell.
 """
 import z3
 
+from ._fol_encode import FOLContext, _verdict_for, parse_fol
 from ._z3_encode import ParseError, parse_prop
 
 
@@ -107,6 +108,33 @@ def check_consistency(formulas: list[str]) -> dict:
             "position": None, "counterexample": None, "model": model}
 
 
+def fol_prove(premises: list[str], conclusion: str, timeout_ms: int = 5000) -> dict:
+    """Prove a quantified statement via Z3. Verdict may be `unknown` (FOL is undecidable)."""
+    ctx = FOLContext()
+    try:
+        prem = [parse_fol(p, ctx) for p in premises]
+        concl = parse_fol(conclusion, ctx)
+    except ParseError as err:
+        return {"verdict": "error", "detail": err.message, "position": err.position,
+                "countermodel": None}
+
+    solver = z3.Solver()
+    solver.set("timeout", timeout_ms)
+    solver.add(*prem)
+    solver.add(z3.Not(concl))
+    result = solver.check()
+    verdict = _verdict_for(result)
+    out = {"verdict": verdict, "detail": "", "position": None, "countermodel": None}
+    if verdict == "provable":
+        out["detail"] = "premises ∧ ¬conclusion is unsatisfiable"
+    elif verdict == "refuted":
+        out["detail"] = "found a countermodel"
+        out["countermodel"] = str(solver.model())
+    else:
+        out["detail"] = "Z3 returned unknown; first-order logic is not decidable in general"
+    return out
+
+
 # --- MCP wiring (thin shell; not exercised by unit tests) ---
 def main():  # pragma: no cover
     from mcp.server.fastmcp import FastMCP
@@ -114,6 +142,7 @@ def main():  # pragma: no cover
     mcp = FastMCP("formal_logic")
     mcp.tool(name="entails")(entails)
     mcp.tool(name="check_consistency")(check_consistency)
+    mcp.tool(name="fol_prove")(fol_prove)
     mcp.run()
 
 
