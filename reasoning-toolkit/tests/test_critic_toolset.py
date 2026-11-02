@@ -21,8 +21,8 @@ def _as_set(val):
     return {t.strip() for t in val.split(",") if t.strip()}
 
 
-def test_formal_logic_critic_has_no_cheat_tools():
-    fm = _frontmatter(AGENTS / "formal-logic-critic.md")
+def _assert_locked(agent_file):
+    fm = _frontmatter(AGENTS / agent_file)
     allow = _as_set(fm.get("tools", ""))
     deny = _as_set(fm.get("disallowedTools", ""))
     # The binding guarantee: the allowlist contains nothing that can compute or
@@ -32,3 +32,11 @@ def test_formal_logic_critic_has_no_cheat_tools():
     # Defense in depth: the denylist bans every cheat path, including all MCP tools.
     assert CHEAT_TOOLS <= deny
     assert any(t.startswith("mcp__") for t in deny)
+
+
+def test_formal_logic_critic_has_no_cheat_tools():
+    _assert_locked("formal-logic-critic.md")
+
+
+def test_graph_of_thought_critic_has_no_cheat_tools():
+    _assert_locked("graph-of-thought-critic.md")

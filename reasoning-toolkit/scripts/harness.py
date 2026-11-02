@@ -92,6 +92,54 @@ def run_comparison(engine, problem, lane_outputs, ledger=None):
             "report": _render(engine, comparison, metrics)}
 
 
+def score_adherence(claimed, replayed):
+    """Did the critic's claimed rule-outcomes match the deterministic replay?
+
+    `claimed[i]` may carry `pruned`/`refused` claims; `replayed[i]` is the actual
+    op result. Adherence is Measured (replay is deterministic); the thought
+    content and scores themselves stay Asserted and are not graded here.
+    """
+    checks = 0
+    violations = []
+    for i, claim in enumerate(claimed):
+        actual = replayed[i] if i < len(replayed) else {}
+        for key in ("pruned", "refused"):
+            if key in claim:
+                checks += 1
+                actual_val = bool(actual.get(key, False))
+                if bool(claim[key]) != actual_val:
+                    violations.append({"index": i, "op": actual.get("op"), "key": key,
+                                       "claimed": bool(claim[key]), "actual": actual_val})
+    adherence = 1.0 if checks == 0 else (checks - len(violations)) / checks
+    return {"adherence": adherence, "violations": violations, "checks": checks}
+
+
+def run_got_comparison(problem, lanes, ledger):
+    """graph-of-thought lane comparison: adherence (measured) + content (asserted)."""
+    from reasoning_servers.graph_of_thought import replay_results
+
+    pid = problem["problem_id"]
+    input_hash = _sha256(problem.get("parsed", ""))
+    ledger.register_problem(pid, "graph-of-thought", problem.get("set_id"),
+                            problem.get("raw", ""), problem.get("parsed", ""),
+                            problem.get("source"))
+    results = {}
+    for lane, data in lanes.items():
+        replayed = replay_results(data.get("ops", []))
+        adh = score_adherence(data.get("claims", []), replayed)
+        ledger.record_run(pid, "graph-of-thought", lane, "replay", input_hash,
+                          _sha256(json.dumps(replayed, sort_keys=True)),
+                          "adherence", json.dumps(adh), None, data.get("model_id"),
+                          "measured", 0)
+        content = {"scores": data.get("scores"), "synthesis": data.get("synthesis")}
+        ledger.record_run(pid, "graph-of-thought", lane, "content", input_hash,
+                          _sha256(json.dumps(content, sort_keys=True)),
+                          "asserted", json.dumps(content), None, data.get("model_id"),
+                          "asserted", 0)
+        results[lane] = adh
+    return {"problem_id": pid, "adherence": results}
+
+
 def _render(engine, comparison, metrics):
     lines = [f"# Comparison — {engine} — {comparison['problem_id']}",
              f"oracle: {comparison['oracle_lane']} = {comparison['oracle_verdict']}", "",

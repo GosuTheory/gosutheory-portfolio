@@ -118,6 +118,17 @@ def replay(ops):
     return store.state()
 
 
+def replay_results(ops):
+    """Apply ops to a fresh store and return each op's actual result (for adherence)."""
+    store = GraphStore()
+    results = []
+    for op in ops:
+        kw = {k: v for k, v in op.items() if k != "op"}
+        res = getattr(store, op["op"])(**kw)
+        results.append({"op": op["op"], **(res if isinstance(res, dict) else {})})
+    return results
+
+
 # --- MCP wiring (thin shell; not exercised by unit tests) ---
 def main():  # pragma: no cover
     import os
