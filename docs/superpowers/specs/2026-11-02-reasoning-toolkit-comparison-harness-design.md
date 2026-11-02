@@ -1,9 +1,27 @@
 # Reasoning Toolkit — Comparison-Harness Vertical Slice
 
-> **Status**: Design (approved for spec review)
+> **Status**: Design (approved for spec review) — **Revision 2 (post adversarial audit)**
 > **Date**: 2026-11-02
 > **Author**: GosuTheory (GT), with Claude Code
 > **Scope**: Phase 1 vertical slice of a larger `reasoning-toolkit` Claude Code plugin
+
+---
+
+## 0. Revision history
+
+**Rev 2 (2026-11-02)** — hardened after an independent adversarial audit. The architecture is
+unchanged; the changes close the gaps where the experiment could have produced impressive numbers
+that constrain nothing (the exact "dancing with robots" failure this toolkit exists to prevent).
+
+| # | Change | Driven by |
+| --- | --- | --- |
+| C1 | The `subagent` lane is dispatched as a **plugin-defined agent with a locked, empty/Read-only toolset** — no Bash, no `mcp__*`, no web. A sentence in a prompt is not a control; a subagent inherits tools (incl. the plugin's own Z3 server) by default. | Blocker |
+| C2 | `fol_prove` gains an **`unknown`** verdict (Z3 is not a decision procedure for FOL). Headline metric anchored on the **propositional** path, where Z3 is complete. | Blocker |
+| C3 | **Oracle-validation set and subagent-benchmark set are separated.** The benchmark is purpose-built to discriminate a weak reasoner; the metric reports N, a confidence interval, and coverage, and is described honestly as *inference accuracy given a fixed formalization*. | Should-fix |
+| C4 | graph-of-thought contrast **reframed** from ill-defined "structural agreement" to **rule-adherence replay** (a real deterministic oracle it already had). | Should-fix |
+| C5 | The harness scorekeeping (register → record → compare → render) moves into a **deterministic `harness.py`**; the critic writes JSON to a file the script reads/validates/hashes. Only the dispatch stays agent-mediated. | Should-fix |
+| C6 | `entails` guards against **inconsistent premises** (vacuous truth) with a distinct verdict. | Nice-to-have |
+| C7 | Work sequenced: **formal-logic complete (propositional-first) is the hard gate**; reframed GoT is a stretch. | Should-fix |
 
 ---
 
@@ -15,7 +33,7 @@ reasoning.services engines so each engine can run through interchangeable **lane
 
 - `remote` — the hosted reasoning.services MCP endpoint (for engines we have trial access to),
 - `local` — a small, deterministic, open-source rebuild we write ourselves,
-- `subagent` — an LLM rebuild driven by Claude Code subagents.
+- `subagent` — an LLM rebuild driven by a locked-down Claude Code subagent.
 
 The plugin's spine is a **comparison harness** that runs multiple lanes of the same engine on
 the same input, records every lane's output to a results ledger, and reports where the lanes
@@ -28,18 +46,19 @@ GT's Trace Ledger: *"put every formal move to a solver so the parts that aren't 
 be checked without taking my word for any of it,"* and the Measured-vs-Asserted split that runs
 down that document.
 
-Concretely, success is a **number**: for an engine that has a deterministic oracle (formal
-logic → Z3), the per-lane **agreement rate vs the oracle** across a known-answer test set. That
-number quantifies how far an LLM lane can be trusted without the solver. Where no oracle exists
-(graph-of-thought scoring), the harness must say so explicitly and record those outputs as
-`asserted`, never dressing them up as measured.
+Concretely, success is a **defensible number**: for an engine with a deterministic oracle
+(propositional formal logic → Z3), the per-lane **inference accuracy vs the oracle** across a
+purpose-built benchmark, reported with its N, a confidence interval, and coverage. That number
+quantifies how far an LLM lane can be trusted on inference *given a fixed formalization*. Where
+no oracle exists (graph-of-thought scoring), the harness must say so explicitly and record those
+outputs as `asserted`, never dressing them up as measured.
 
 ### 1.3 Non-goals (this slice)
 - No router (`reasoning-guide`) or orchestrator (`reasoning-chain`).
 - No denied engines yet (`devils-advocate`, `decision-matrix`, `context-switcher`,
   `hindsight`, `structured-reflection`).
 - No trace-ledger vector RAG / "ledger pointer" observability layer.
-- No Ollama or external-API critic lanes — the chosen critic is Claude Code subagents.
+- No Ollama or external-API critic lanes — the chosen critic is a Claude Code subagent.
 - Not a portfolio feature; it merely lives in this repo's branch until lifted into its own repo.
 
 ---
@@ -48,10 +67,10 @@ number quantifies how far an LLM lane can be trusted without the solver. Where n
 
 Only the two engines GT's Trace Ledger actually exercises ("the ones we know work"):
 
-| Engine | Operations | Oracle? | Why it's in the slice |
+| Engine | Operations | Oracle | Role in slice |
 | --- | --- | --- | --- |
-| `formal-logic` | `entails`, `check_consistency`, `fol_prove` | **Yes — local Z3** | The keystone. A deterministic oracle makes the comparison objective: when the subagent lane disagrees with Z3, the robot was dancing. |
-| `graph-of-thought` | `seed`, `generate`, `score`, `aggregate`, `refine` | **No** | The instructive contrast. Scores are GT's judgment (Asserted). Proves the harness works where nothing deterministic can check the output, and shows *where* robot-dancing hides (the scoring step). |
+| `formal-logic` | `entails`, `check_consistency`, `fol_prove` | **Yes.** Local Z3 — **complete for the propositional path** (always sat/unsat); the FOL path (`fol_prove`) may return `unknown` and is a caveated secondary signal. | Keystone. The propositional oracle makes the comparison objective: when the locked subagent lane disagrees with Z3, the LLM got caught. |
+| `graph-of-thought` | `seed`, `generate`, `score`, `aggregate`, `refine` | **For reasoning content: none** (scores are GT's/LLM judgment, `asserted`). **For rule-adherence: yes** — the state-machine semantics are deterministic. | Contrast engine. Measures whether the subagent, maintaining the graph in-context, **correctly enforces the rules it was told to** (rule-adherence replay), while all scores/syntheses stay `asserted`. |
 
 ---
 
@@ -61,8 +80,9 @@ Only the two engines GT's Trace Ledger actually exercises ("the ones we know wor
 Each component has one clear purpose, a defined interface, and explicit dependencies.
 
 1. **Local MCP server: `formal_logic`** (Python + `z3-solver`)
-   - *Does*: evaluates `entails`/`check_consistency` (propositional SAT refutation) and
-     `fol_prove` (quantified, via Z3) and returns a structured verdict.
+   - *Does*: evaluates `entails`/`check_consistency` (propositional SAT refutation over Boolean
+     consts — complete) and `fol_prove` (quantified, via Z3, with a timeout) and returns a
+     structured verdict.
    - *Interface*: MCP tools `entails(premises, conclusion)`, `check_consistency(formulas)`,
      `fol_prove(premises, conclusion)`; each returns `{verdict, detail, model?/counterexample?}`.
    - *Depends on*: `z3-solver`, `mcp`. No network, no LLM, no state.
@@ -70,47 +90,57 @@ Each component has one clear purpose, a defined interface, and explicit dependen
 2. **Local MCP server: `graph_of_thought`** (Python + sqlite)
    - *Does*: holds a reasoning graph server-side and enforces the documented semantics —
      `score < 0.3` prunes a node permanently; `refine` is refused once a node has been merged
-     (`aggregate`); `refine` returns a *new* node id.
-   - *Interface*: MCP tools `seed(session_id, problem)`, `generate(parent_id, thoughts[])`,
-     `score(node_id, score, reasoning)`, `aggregate(parent_ids[], synthesis)`,
-     `refine(node_id, improved_content)`.
+     (`aggregate`); `refine` returns a *new* node id. **Also serves as the replay oracle** for the
+     GoT rule-adherence check (§5.3).
+   - *Interface*: MCP tools `seed`, `generate`, `score`, `aggregate`, `refine`, plus
+     `replay(ops[])` → returns the graph state those ops *actually* produce under the rules.
    - *Depends on*: `mcp`, stdlib `sqlite3`. No network, no LLM.
 
 3. **Local MCP server: `ledger`** (Python + sqlite)
-   - *Does*: append-only store of lane runs; computes agreement and oracle-labeled correctness.
-   - *Interface*: MCP tools `record_run(...)`, `compare(problem_id)`, `agreement_rate(engine, lane)`,
-     `register_problem(...)`, `query(...)`.
+   - *Does*: append-only store of lane runs; computes agreement, oracle-labeled correctness, and
+     coverage.
+   - *Interface*: MCP tools `record_run(...)`, `compare(problem_id)`,
+     `metrics(engine, lane, set_id)` (accuracy + CI + coverage), `register_problem(...)`, `query(...)`.
    - *Depends on*: `mcp`, stdlib `sqlite3`.
 
-4. **Skill: `comparison-harness`** (markdown protocol, runs on the main agent)
-   - *Does*: the orchestration contract — for a given engine + problem, determine enabled lanes
-     from config, run each lane, record each to the ledger, call `compare`, and render the report.
-   - *Depends on*: the three servers (for `local`/`remote` lanes and recording), the Agent/subagent
-     tool (for the `subagent` lane), `reasoning-config.json`.
+4. **Deterministic harness: `scripts/harness.py`** (plain Python, no LLM)
+   - *Does*: everything in the comparison flow except the subagent dispatch — register the problem,
+     read + validate + hash each lane's output file, call `record_run`, call `compare`/`metrics`,
+     render the report. The scorekeeper is code, not an agent.
+   - *Interface*: CLI `harness.py <engine> <problem_file> <lane_output_dir>`.
+   - *Depends on*: stdlib + the three servers (via their sqlite files or a thin client).
 
-5. **Skill: `formal-logic`** (markdown protocol)
-   - *Does*: how to parse a natural-language or semi-formal problem into `premises`/`conclusion`,
-     how to route to each lane, and the exact subagent prompt for the `subagent` lane.
+5. **Agent: `agents/formal-logic-critic.md`** — the locked `subagent` lane for formal-logic.
+   - *Does*: receives `{premises, conclusion}`, decides entailment **by reasoning only**, writes
+     `{verdict, reasoning}` JSON to its output file.
+   - *Toolset*: **empty / Read-only** — frontmatter `tools:` grants nothing that can compute or
+     fetch an answer: no Bash, no Write/Edit beyond its output file, no WebFetch/WebSearch, and
+     **no `mcp__*` tools** (crucially not `formal_logic`). It cannot cheat because it has no tool
+     to cheat with.
 
-6. **Skill: `graph-of-thought`** (markdown protocol)
-   - *Does*: the seed→generate→score→aggregate protocol and per-lane routing; the subagent-lane
-     instructions for maintaining an in-context graph that returns the same structure.
+6. **Agent: `agents/graph-of-thought-critic.md`** — the locked `subagent` lane for GoT.
+   - *Does*: maintains a reasoning graph in-context per the rules, and emits its **operation trace**
+     (the ordered `seed/generate/score/aggregate/refine` calls it believes it made) plus its claimed
+     final graph, as JSON. Same locked toolset.
 
-7. **Command: `/reason-compare`** (markdown)
-   - *Does*: entrypoint — `/reason-compare <engine> <problem>`; invokes the comparison-harness skill.
+7. **Skills**: `comparison-harness/SKILL.md` (the thin agent-side contract: parse → dispatch critic →
+   invoke `harness.py`), `formal-logic/SKILL.md` (NL→`{premises,conclusion}` parsing + lane routing),
+   `graph-of-thought/SKILL.md` (the GoT protocol + lane routing).
 
-8. **Config: `reasoning-config.json`** — per-engine lane list, oracle designation, remote enable-gate.
+8. **Command**: `/reason-compare <engine> <problem>` → invokes the comparison-harness skill.
 
-9. **Plugin manifest + `.mcp.json`** — registers the three local servers and the remote
-   reasoning.services server.
+9. **Config**: `config/reasoning-config.json` — per-engine lane list, oracle designation, remote gate.
 
-### 3.2 Why the subagent lane is orchestrated from a skill, not a server
-A Claude Code MCP server process cannot call the Task/subagent tool — that tool exists only for
-the main agent. Therefore the LLM (`subagent`) lane is driven by the **skill** on the main agent,
-which dispatches a fresh, isolated subagent per lane per problem and then records the result via
-the `ledger` server. The servers stay deterministic and stateless-except-for-storage; all LLM
-behavior is in skills. Fresh-subagent-per-lane gives genuine context isolation (the property
-reasoning.services only claims).
+10. **Plugin manifest + `.mcp.json`** — registers the three local stdio servers and the remote
+    reasoning.services HTTP server; `agents/`, `skills/`, `commands/` auto-discovered from plugin root.
+
+### 3.2 Why the subagent lane is orchestrated from a skill, not a server (validated premise)
+A Claude Code MCP server process cannot call the Task/subagent tool — MCP servers expose tools *to*
+the agent and hold no handle on the agent's own tools (the only server→model path is MCP "sampling,"
+a single completion, not a tool-enabled isolated subagent). Therefore the LLM (`subagent`) lane is
+driven by the **skill** on the main agent, which dispatches a fresh, locked critic agent per problem
+and then hands its output file to `harness.py`. The servers stay deterministic; all LLM behavior is in
+the critic agent; all scorekeeping is in code.
 
 ### 3.3 Proposed directory layout (built at implementation time, not now)
 ```
@@ -119,6 +149,9 @@ reasoning-toolkit/
 ├── .mcp.json
 ├── config/reasoning-config.json
 ├── commands/reason-compare.md
+├── agents/
+│   ├── formal-logic-critic.md        # locked, empty toolset
+│   └── graph-of-thought-critic.md    # locked, empty toolset
 ├── skills/
 │   ├── comparison-harness/SKILL.md
 │   ├── formal-logic/SKILL.md
@@ -128,16 +161,24 @@ reasoning-toolkit/
 │   ├── formal_logic.py
 │   ├── graph_of_thought.py
 │   ├── ledger.py
-│   ├── _z3_encode.py          # shared premise/conclusion parsing for Z3
-│   └── pyproject.toml         # single dependency surface
-├── scripts/seed_examples.py   # load known-answer examples from the Trace Ledger
+│   ├── _z3_encode.py
+│   └── pyproject.toml
+├── scripts/
+│   ├── harness.py                    # deterministic scorekeeper
+│   └── seed_examples.py
+├── benchmarks/
+│   ├── oracle_validation.jsonl       # reproduce GT's recorded verdicts
+│   └── subagent_propositional.jsonl  # purpose-built discriminating set
+├── runs/                             # per-run lane output files (critic writes here)
 ├── tests/
 │   ├── test_formal_logic.py
 │   ├── test_graph_of_thought.py
-│   └── test_ledger.py
+│   ├── test_ledger.py
+│   ├── test_critic_toolset.py        # asserts the critic agent has no cheat tools
+│   └── test_harness.py
 └── README.md
 ```
-One Python package, one virtual environment, one install step — minimal setup friction.
+One Python package, one virtual environment, one install step.
 
 ---
 
@@ -149,12 +190,15 @@ Every lane of an engine accepts the same operation inputs and returns a comparab
 
 - **Input**: `{ premises: string[], conclusion: string }` in the reasoning.services/Z3 surface
   syntax (operators `->`, `&`, `|`, `~`, `forall`, predicates `Name(x)`).
-- **Output**: `{ verdict: "entails" | "does_not_entail" | "error", reasoning: string,
-  counterexample?: object }`.
+- **Output**: `{ verdict, reasoning, counterexample? }`.
 
-`fol_prove` output verdict ∈ `{ "provable", "refuted", "error" }`; `check_consistency` verdict ∈
-`{ "consistent", "inconsistent", "error" }` with a `model?` when consistent. These mirror the
-verdict vocabulary documented in the Trace Ledger (§6).
+Verdict domains (also the ledger CHECK domain, minus the lane-status values):
+- `entails` ∈ `{ entails, does_not_entail, inconsistent_premises, error }`
+- `check_consistency` ∈ `{ consistent, inconsistent, error }` (+ `model?` when consistent)
+- `fol_prove` ∈ `{ provable, refuted, unknown, error }`
+- lane-status (any op, any lane): `unavailable`, `unparseable`
+
+`inconsistent_premises` and `unknown` are first-class outcomes, not errors (§8).
 
 ### 4.2 `reasoning-config.json`
 ```json
@@ -162,100 +206,123 @@ verdict vocabulary documented in the Trace Ledger (§6).
   "formal-logic": {
     "lanes": ["local", "subagent", "remote"],
     "oracle": "local",
-    "remote": {
-      "enabled_when": "token",
-      "server": "reasoning_remote",
-      "url_env": "REASONING_SERVICES_URL",
-      "token_env": "REASONING_SERVICES_TOKEN"
-    }
+    "subagent": { "agent": "formal-logic-critic" },
+    "remote": { "enabled_when": "token", "server": "reasoning_remote",
+                "url_env": "REASONING_SERVICES_URL", "token_env": "REASONING_SERVICES_TOKEN" }
   },
   "graph-of-thought": {
     "lanes": ["local", "subagent", "remote"],
     "oracle": null,
+    "rule_adherence_oracle": "local",
+    "subagent": { "agent": "graph-of-thought-critic" },
     "remote": { "enabled_when": "token", "server": "reasoning_remote" }
   }
 }
 ```
 
-### 4.3 Lane selection semantics
-- **Compare mode** (`/reason-compare`): run *all* lanes in `lanes[]` that are currently available.
-- **Single-call `auto`**: prefer `oracle` → else `local` → else `remote` (if token present) → else `subagent`.
+### 4.3 Lane selection + the subagent isolation contract
+- **Compare mode** (`/reason-compare`): run every available lane in `lanes[]`.
+- **Single-call `auto`**: prefer `oracle` → else `local` → else `remote` (if token) → else `subagent`.
 - A lane that is unavailable (no token, server down, trial lapsed) is **skipped**, recorded as
-  `verdict=unavailable`, and never aborts the run. This is the "survives the token lapsing"
-  property the Trace Ledger documents as a real event (2026-09-24 trial lapse).
+  `verdict=unavailable`, and never aborts the run. (Matches the documented 2026-09-24 trial lapse.)
+- **Subagent isolation contract (C1)**: the `subagent` lane is *only* ever dispatched as the
+  engine's named critic agent, which ships with a locked, empty/Read-only toolset. The critic has
+  no Bash, no file write except its own output file, no web, and **no `mcp__*` tools** — so it
+  physically cannot call the oracle or any solver. `test_critic_toolset.py` asserts this; if the
+  critic can reach a tool that computes the answer, the whole agreement number is void.
 
 ---
 
-## 5. Data flow — `/reason-compare formal-logic "<problem>"`
+## 5. Data flow
 
-1. **Parse** — the `formal-logic` skill turns the problem into `{premises, conclusion}`. (This
-   step may itself use the main agent's reasoning; the parse is recorded with the problem so the
-   comparison is apples-to-apples across lanes.)
-2. **Register** — `ledger.register_problem(problem_id, engine, raw, parsed_json, source)`.
-3. **Run each enabled lane**:
-   - `local` / `remote` → MCP tool call to the respective server.
-   - `subagent` → dispatch a fresh subagent with the engine's subagent prompt; capture
-     `{verdict, reasoning}` as JSON.
-4. **Record** — `ledger.record_run(problem_id, engine, lane, op, input_hash, verdict, reasoning,
-   latency_ms, kind, oracle)` where `kind` is `measured` for `local` formal-logic (Z3) and
-   `asserted` for every LLM/`subagent` lane and all graph-of-thought lanes.
-5. **Compare** — `ledger.compare(problem_id)` returns the agreement matrix. If the engine has an
-   `oracle` lane (formal-logic → `local`/Z3), each non-oracle lane is labeled `correct` /
-   `incorrect` against it. When `oracle` is `null` (graph-of-thought), `compare` reports
-   **structural agreement only**: it diffs the lanes' *decisions* — which nodes were pruned
-   (`score < 0.3`), which were aggregated, and node/edge counts — and sets the terminal syntheses
-   side by side for a human to read. Every output stays marked `asserted`; no lane is labeled
-   correct/incorrect because there is nothing deterministic to be correct against. That absence is
-   itself the finding the contrast engine exists to show.
-6. **Report** — the harness renders a table: lane × verdict × latency, the agreement/divergence
-   summary, and (with an oracle) an explicit "lanes caught dancing" list.
+### 5.1 `/reason-compare formal-logic "<problem>"`
+1. **Parse** — the `formal-logic` skill turns the problem into `{premises, conclusion}` and writes
+   it to a problem file. The parse is **Asserted** (it is itself a reasoning step; see A3). All lanes
+   judge this one fixed encoding, so the metric isolates *inference*, not formalization.
+2. **Run each enabled lane** (skill-mediated only for the dispatch):
+   - `local` / `remote` → MCP tool call; result written to `runs/<id>/<lane>.json`.
+   - `subagent` → dispatch the **locked** `formal-logic-critic` agent; it writes
+     `runs/<id>/subagent.json` itself.
+3. **`harness.py`** (deterministic): register problem → read/validate/hash each `runs/<id>/<lane>.json`
+   → `ledger.record_run(...)` with `kind` = `measured` for `local` (propositional) Z3, else `asserted`
+   → `ledger.compare` / `ledger.metrics` → render the report.
+4. **Compare** — if the engine has an `oracle` and the oracle returned a **definite** verdict, each
+   non-oracle lane is labeled `correct`/`incorrect`. When the oracle returns `unknown` (FOL only),
+   that problem is excluded from accuracy and **counted in a reported `oracle_unknown` tally** — the
+   oracle shrugged; it is not silently dropped.
 
-### 5.1 Ledger schema (sqlite)
+### 5.2 The metric (rewritten honestly — C2, C3)
+- **Primary**: `inference_accuracy(lane)` over the **propositional** benchmark set (complete oracle)
+  = among problems the lane answered with a parseable verdict, the fraction matching Z3. Reported
+  **with N and a Wilson confidence interval** — never a bare fraction over a handful of items.
+- **Coverage**: `coverage(lane)` = fraction of the set the lane answered cleanly (not
+  `unparseable`/`error`). Reported *next to* accuracy, because high accuracy on low coverage means
+  the lane dodged the hard ones — the selection bias is made visible, not hidden. A combined
+  "answered-correctly-out-of-all" figure is reported too (unparseable counted as wrong).
+- **What it means**: *inference accuracy on a fixed formalization* — **not** end-to-end logical
+  trust. The parse is shared and Asserted; the Pendulum case (§6) is itself proof that the encoding,
+  not the inference, is often where the judgment lives.
+- **FOL (secondary, caveated)**: same computation on `fol_prove` cases, with oracle-`unknown`
+  excluded from the denominator and the exclusion count reported alongside.
+- Every `subagent` run records the **model id + version**; the number is model-version-specific and
+  will drift.
+
+### 5.3 `/reason-compare graph-of-thought "<problem>"` (reframed — C4)
+There is no deterministic *content* oracle for GoT (even the `local` lane's scores come from an LLM),
+so the slice does **not** claim "structural agreement of reasoning." Instead it measures
+**rule-adherence**, which *does* have a deterministic oracle:
+1. The `graph-of-thought-critic` maintains the graph in-context and emits its **operation trace** +
+   its claimed final graph.
+2. `harness.py` replays that trace through the `graph_of_thought` server's `replay(ops)`.
+3. **Measured**: does the critic's self-reported result match what the rules actually produce — did
+   it prune exactly the nodes with `score < 0.3`, correctly refuse `refine` after `aggregate`, and
+   treat `refine` as producing a new id? Report adherence as a rate.
+4. **Asserted** (never scored for correctness): the thought content, the scores, the synthesis text.
+
+### 5.4 Ledger schema (sqlite)
 ```sql
 CREATE TABLE problems (
   problem_id TEXT PRIMARY KEY,
   engine     TEXT NOT NULL,
+  set_id     TEXT,                    -- 'oracle_validation' | 'subagent_propositional' | 'user'
   raw        TEXT NOT NULL,
   parsed_json TEXT,
-  source     TEXT            -- e.g. 'trace-ledger:pendulum', 'user'
+  source     TEXT                     -- e.g. 'trace-ledger:pendulum'
 );
 
 CREATE TABLE runs (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts         TEXT NOT NULL,
-  problem_id TEXT NOT NULL REFERENCES problems(problem_id),
-  engine     TEXT NOT NULL,
-  lane       TEXT NOT NULL,          -- local | subagent | remote
-  op         TEXT NOT NULL,          -- entails | fol_prove | ...
-  input_hash TEXT NOT NULL,
-  verdict    TEXT NOT NULL,          -- incl. 'error' | 'unavailable' | 'unparseable'
-  reasoning  TEXT,
-  latency_ms INTEGER,
-  kind       TEXT NOT NULL CHECK (kind IN ('measured','asserted')),
-  oracle     INTEGER NOT NULL DEFAULT 0
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          TEXT NOT NULL,
+  problem_id  TEXT NOT NULL REFERENCES problems(problem_id),
+  engine      TEXT NOT NULL,
+  lane        TEXT NOT NULL,          -- local | subagent | remote
+  op          TEXT NOT NULL,
+  input_hash  TEXT NOT NULL,
+  output_hash TEXT,                   -- hash of the lane's output file (tamper-evidence)
+  verdict     TEXT NOT NULL,          -- domain per §4.1 incl. unavailable/unparseable
+  reasoning   TEXT,
+  latency_ms  INTEGER,
+  model_id    TEXT,                   -- subagent lane: which model/version produced it
+  kind        TEXT NOT NULL CHECK (kind IN ('measured','asserted')),
+  oracle      INTEGER NOT NULL DEFAULT 0
 );
 ```
 
-### 5.2 Headline metric
-`agreement_rate(engine, lane)` = over all problems where both `lane` and the oracle produced a
-non-error verdict, the fraction where they match. For `formal-logic.subagent` vs `local` (Z3)
-this is the single number that answers "how much can the LLM's logic be trusted without a solver."
-
 ---
 
-## 6. Subagent lane prompts (sketch)
+## 6. Subagent (critic) prompts (sketch)
 
-**formal-logic / subagent** (deliberately solver-free):
+**formal-logic-critic** (locked toolset; reasons only):
 > You are a logic engine. Given premises and a conclusion, decide whether the premises **entail**
-> the conclusion. You may reason step by step but you may **not** invoke any external solver or
-> tool. Return only JSON: `{"verdict": "entails" | "does_not_entail", "reasoning": "<short>"}`.
+> the conclusion. Reason step by step. You have no tools; do not claim to have run one. Write only
+> JSON to your output file: `{"verdict": "entails"|"does_not_entail", "reasoning": "<short>"}`.
 
-**graph-of-thought / subagent**:
-> Maintain a reasoning graph for the given problem using the operations seed/generate/score/
-> aggregate. Enforce: any node you score below 0.3 is pruned; a node cannot be refined after it
-> is aggregated. Return the final graph as JSON (nodes, edges, scores, terminal synthesis).
+**graph-of-thought-critic** (locked toolset):
+> Maintain a reasoning graph for the problem using seed/generate/score/aggregate/refine. Enforce:
+> a node scored below 0.3 is pruned; a node cannot be refined after it is aggregated; refine creates
+> a new node id. Emit JSON: `{"ops": [...ordered calls...], "final_graph": {...}}`.
 
-Isolation: one fresh subagent per lane per problem — no shared context, no contamination.
+The locked toolset — not the prose — is what guarantees "no solver." The prose only shapes output.
 
 ---
 
@@ -263,89 +330,114 @@ Isolation: one fresh subagent per lane per problem — no shared context, no con
 
 `.mcp.json` registers reasoning.services as an HTTP MCP server with
 `Authorization: Bearer ${REASONING_SERVICES_TOKEN}` and base URL `${REASONING_SERVICES_URL}`.
-Tool names observed in the Trace Ledger: `seed/generate/score/aggregate/refine` (graph) and
-`entails/check_consistency/fol_prove` (logic).
+Tool names observed in the Trace Ledger: `seed/generate/score/aggregate/refine` and
+`entails/check_consistency/fol_prove`.
 
-**Assumption / open item**: the exact endpoint URL and auth are not in the ledger. The `local`
+**Assumption / open item (A1)**: the exact endpoint URL and auth are not in the ledger. The `local`
 and `subagent` lanes need none of this, so the slice is fully buildable and testable without it.
-The remote lane is wired last, when GT supplies the endpoint (likely liftable from
-`~/.claude.json` if the reasoning.services marketplace plugin is installed). Until then the remote
-lane records `unavailable` and the harness proceeds.
+The remote lane is wired last; until then it records `unavailable` and the harness proceeds.
 
 ---
 
-## 8. Error handling (mirrors the ledger's documented failure modes)
+## 8. Error handling and logical footguns
 
-- **Z3 parse/syntax error** → structured result in the ledger's own `❌ Invalid Input` style,
-  `verdict=error`. Regression test includes the HTML-escaped-ampersand case (`&amp;` vs `&`) from
-  Trace Ledger §5.
+- **Z3 propositional parse/syntax error** → structured `❌ Invalid Input` result, `verdict=error`.
+  Regression test includes the HTML-escaped-ampersand case (`&amp;` vs `&`) from Trace Ledger §5.
+- **Inconsistent premises (C6)** → before reporting `entails`, check that the premises alone are
+  SAT. If they are UNSAT, every conclusion is vacuously entailed, so return
+  `verdict=inconsistent_premises`, never a clean `entails`. Regression test with contradictory
+  premises.
 - **Vacuous `consistent`** → `check_consistency` flags when the only satisfying model sets every
-  atom false (the Part III footgun); the result notes it rather than reporting a clean pass.
-- **Subagent returns non-JSON** → one stricter-prompt retry, then `verdict=unparseable`.
+  atom false (the Part III footgun) rather than reporting a clean pass.
+- **FOL `unknown` (C2)** → Z3 is not a decision procedure for quantified logic; set an explicit
+  timeout and map timeout/incompleteness → `verdict=unknown`. The oracle is allowed to have no
+  answer, and the metric excludes and counts those.
+- **Subagent returns non-JSON / empty file** → `verdict=unparseable`; counted against coverage.
 - **Remote refuses / token lapsed** → `verdict=unavailable`, run continues.
-- **Ledger** is append-only; `input_hash` identifies re-runs while preserving history.
+- **Ledger** is append-only; `input_hash` + `output_hash` identify re-runs and make tampering evident.
 
 ---
 
 ## 9. Testing strategy — the proof the toolkit constrains something
 
-### 9.1 Oracle validation (Measured ground truth from the Trace Ledger)
-Z3 `local` lane must reproduce GT's recorded verdicts:
-- **Pendulum (§5)**: propositional encoding → `does_not_entail` with a counterexample;
-  predicate (FOL) encoding → `provable`.
-- **054 meta-theorem**: `provable` in its quantified form; supporting `~thing_ontology` and
-  `fact -> ~truth` → `entails`.
+### 9.1 Oracle validation set (`benchmarks/oracle_validation.jsonl`)
+Purpose: prove the `local` Z3 lane reproduces GT's recorded verdicts (Measured ground truth from the
+Trace Ledger). **Not** used to score the subagent.
+- **Pendulum (§5)**: propositional → `does_not_entail` + counterexample; FOL → `provable`.
+- **054 meta-theorem**: `provable` quantified; `~thing_ontology`, `fact -> ~truth` → `entails`.
 - **040 T14**: both derivations → `entails`, no counterexample.
-If Z3 matches these, the oracle is trustworthy; the whole comparison rests on this.
+If Z3 matches these, the oracle is trustworthy. (These verdicts are GT's own; the Trace Ledger is the
+source of record.)
 
-### 9.2 Agreement-rate run
-Run `formal-logic.subagent` across the §9.1 examples and compute agreement vs Z3. The resulting
-rate is the slice's headline deliverable.
+### 9.2 Subagent benchmark set (`benchmarks/subagent_propositional.jsonl`) — C3
+Purpose: measure the subagent lane against Z3. **Propositional only** (complete oracle), and
+**purpose-built to discriminate a weak reasoner**: long modus-tollens chains, XOR/parity, pigeonhole,
+nested implication, material-implication and vacuous-truth traps, plus easy controls. Minimum N stated
+(target ≥ 40 so a Wilson CI is meaningful); every item has a Z3-computed gold verdict. The agreement
+figure is reported with N, CI, and coverage (§5.2).
 
-### 9.3 graph-of-thought semantics (reproducibility, not correctness)
-- `score(node, 0.15)` → node pruned, flagged in response.
-- `refine` after `aggregate` → refused; `refine` otherwise → new node id.
-- `aggregate(a,b,c)` → single merged node.
+### 9.3 Anti-cheat test (`test_critic_toolset.py`) — C1
+Assert the critic agent's resolved tool surface contains nothing that can compute or fetch a verdict
+(no Bash, no `mcp__*`, no web). A belt-and-braces behavioral check: hand the critic a problem that a
+tool would trivially solve and confirm no tool call occurs. If this fails, the agreement number is
+void.
 
-### 9.4 Harness + ledger
-- Multi-lane run writes one `runs` row per lane; `compare` labels non-oracle lanes against the
-  oracle; `agreement_rate` math is correct on a hand-checked fixture.
+### 9.4 graph-of-thought rule-adherence (`test_graph_of_thought.py`) — C4
+- Server semantics: `score 0.15` → pruned + flagged; `refine` after `aggregate` → refused; `refine`
+  otherwise → new id; `aggregate(a,b,c)` → one merged node.
+- `replay(ops)` is deterministic and matches direct calls.
+- Adherence scoring: a known-good trace scores 1.0; an injected rule violation (e.g. a refine after
+  aggregate the critic *claims* succeeded) is detected and lowers the score.
 
-All tests run locally: no token, no paid API; subagent tests are the only ones needing a session.
+### 9.5 Harness + ledger (`test_harness.py`, `test_ledger.py`)
+- A multi-lane run writes one `runs` row per lane with correct `kind`, `output_hash`, `model_id`.
+- `metrics` math is correct on a hand-checked fixture: accuracy, Wilson CI, coverage, `oracle_unknown`
+  tally, inconsistent-premises handling.
+
+All tests run locally: no token, no paid API. Only the subagent-lane tests need a session.
 
 ---
 
 ## 10. Dependencies
 
-- `z3-solver` (PyPI) — the solver. Version pinned and import-verified at implementation.
+- `z3-solver` (PyPI) — the official Microsoft Z3 build (not the unrelated `z3` package). Version
+  pinned and import-verified at implementation.
 - `mcp` (Python MCP SDK) — server framework. Version pinned at implementation.
 - stdlib `sqlite3` — graph + ledger storage.
 - `sqlite-vec` — **deferred to the hindsight/RAG phase**, not this slice.
 
-No third-party reasoning MCP servers are adopted in this slice. The engines are our own scripting
-plus Z3. (Gemini's suggested repos — `tenth-man-mcp`, `perspective-mcp`, `decisionmatrix-mcp`,
-etc. — are treated as unverified and are not dependencies; any future adoption is verified
-case-by-case first.)
+No third-party reasoning MCP servers are adopted. The engines are our own scripting plus Z3.
+(Gemini's suggested repos — `tenth-man-mcp`, `perspective-mcp`, `decisionmatrix-mcp`, etc. — are
+unverified and not dependencies; any future adoption is verified case-by-case first.)
 
 ---
 
-## 11. Success criteria (slice is "done")
+## 11. Success criteria
 
-1. `/reason-compare formal-logic "<problem>"` runs the `local` and `subagent` lanes, records both,
-   and prints a comparison showing agreement or divergence, with Z3 labeled as the oracle.
-2. Z3 `local` lane reproduces every §9.1 known-answer verdict.
-3. A subagent-vs-Z3 **agreement rate** is produced over the known-answer set.
-4. `/reason-compare graph-of-thought "<problem>"` runs the `local` and `subagent` lanes and reports
-   structural agreement, with all outputs recorded as `asserted` (no false "measured" claim).
+**Hard gate (formal-logic complete, propositional-first) — C7:**
+1. `/reason-compare formal-logic "<problem>"` runs `local` + `subagent` lanes, records both (with
+   `output_hash`, `model_id`), and prints a comparison with Z3 labeled as oracle.
+2. Z3 `local` lane reproduces every §9.1 oracle-validation verdict; `inconsistent_premises` and
+   propositional completeness behave per §8.
+3. A subagent-vs-Z3 **inference-accuracy** figure is produced over the §9.2 discriminating benchmark,
+   reported with **N, Wilson CI, and coverage**, with the subagent dispatched via the **locked**
+   critic agent (proven tool-less by §9.3). No figure is accepted from an unlocked subagent.
+
+**Soft gate (stretch):**
+4. `/reason-compare graph-of-thought "<problem>"` runs `local` + `subagent` and reports a
+   **rule-adherence** rate via `replay` (Measured), with all scores/syntheses recorded `asserted`.
+
+**Both gates:**
 5. Missing `REASONING_SERVICES_TOKEN` degrades the `remote` lane to `unavailable` without aborting.
-6. Everything is a self-contained, movable `reasoning-toolkit/` plugin directory.
+6. Everything is a self-contained, movable `reasoning-toolkit/` plugin directory; scorekeeping is in
+   `harness.py` (code), not an agent.
 
 ---
 
 ## 12. Phasing beyond the slice
 
-- **P2**: `devils-advocate`, rebuilt via subagents; evaluated against the Trace Ledger's **pruned
-  branches as a labeled test set** ("known failures it should have predicted").
+- **P2**: `devils-advocate`, rebuilt via a locked subagent; evaluated against the Trace Ledger's
+  **pruned branches as a labeled test set** ("known failures it should have predicted").
 - **P3**: remaining denied engines (`decision-matrix`, `context-switcher`, `hindsight`,
   `structured-reflection`).
 - **P4**: `reasoning-guide` router + `reasoning-chain` orchestrator — once engines have earned routing.
@@ -355,12 +447,14 @@ case-by-case first.)
 
 ## 13. Open questions / assumptions
 
-- **A1 (remote endpoint)**: reasoning.services URL + auth needed only for the `remote` lane; slice
-  is testable without it. *Need from GT when wiring remote.*
+- **A1 (remote endpoint)**: reasoning.services URL + auth needed only for the `remote` lane; slice is
+  testable without it. *Need from GT when wiring remote.*
 - **A2 (the 5 you have)**: assumed accessible = `graph-of-thought`, `formal-logic`,
-  `sequential-thinking`, `free-will`, `iterative-refinement`; denied = the other five. Only the
-  first two matter this slice. *Correct if wrong.*
-- **A3 (problem-parse determinism)**: natural-language → `{premises, conclusion}` parsing is itself
-  a reasoning step; the parse is pinned per problem so all lanes judge the same encoding. The parse
-  is Asserted; only the Z3 verdict on that encoding is Measured — the same boundary the Trace
-  Ledger draws ("the solver checks the inference, never the encoding").
+  `sequential-thinking`, `free-will`, `iterative-refinement`; denied = the other five. Only the first
+  two matter this slice. *Correct if wrong.*
+- **A3 (parse boundary)**: NL → `{premises, conclusion}` parsing is a reasoning step; the parse is
+  pinned per problem and marked `asserted`. Only Z3's verdict on that fixed encoding is `measured`.
+  The metric therefore measures *inference given a formalization*, not end-to-end trust — the same
+  boundary the Trace Ledger draws ("the solver checks the inference, never the encoding").
+- **A4 (model drift)**: the subagent agreement number is specific to the model id/version recorded on
+  each run; re-baseline when the model changes.
