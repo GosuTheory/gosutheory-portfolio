@@ -104,6 +104,31 @@ def test_adherence_detects_violation():
     assert any(v["key"] == "refused" for v in res["violations"])
 
 
+def test_adherence_penalizes_missing_claim():
+    # A score op that prunes, but the critic omits any claim about it: the measured
+    # party must not be able to score 1.0 by simply not declaring the hard ops.
+    ops = [
+        {"op": "seed", "session_id": "s", "problem": "p"},
+        {"op": "generate", "parent_id": "n0", "thoughts": ["a"]},
+        {"op": "score", "node_id": "n1", "score": 0.15},  # actually prunes
+    ]
+    claims = [{}, {}, {}]  # critic declared nothing about the prune
+    res = score_adherence(claims, replay_results(ops))
+    assert res["adherence"] < 1.0
+
+
+def test_single_problem_report_not_misleading(tmp_path):
+    led = Ledger(str(tmp_path / "l.db"))
+    prob = {**PROBLEM, "set_id": None}  # ad-hoc /reason-compare, no benchmark set
+    report = run_comparison(
+        "formal-logic", prob,
+        {"local": {"verdict": "entails"}, "subagent": {"verdict": "entails"}},
+        ledger=led)
+    assert report["metrics"]["subagent"]["n"] == 0
+    assert "0.000" not in report["report"]      # no false 0% agreement
+    assert "benchmark" in report["report"].lower()
+
+
 def test_got_scores_recorded_asserted(tmp_path):
     led = Ledger(str(tmp_path / "l.db"))
     problem = {"problem_id": "g1", "set_id": "s", "raw": "r", "parsed": "{}",

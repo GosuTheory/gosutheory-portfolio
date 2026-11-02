@@ -29,6 +29,13 @@ def test_fol_refuted_returns_countermodel():
     assert res["countermodel"]
 
 
+def test_fol_unparenthesized_quantifier_scope():
+    # Quantifier scope must extend to the right: `forall X, Man(X) -> Mortal(X)`
+    # binds X in BOTH predicates. The classic syllogism must be provable.
+    res = fol_prove(["forall X, Man(X) -> Mortal(X)", "Man(socrates)"], "Mortal(socrates)")
+    assert res["verdict"] == "provable"
+
+
 def test_fol_verdict_mapping_includes_unknown():
     # Z3 is not a decision procedure for FOL: `unknown` is a real outcome the
     # classifier must surface (not crash, not error).

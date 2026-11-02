@@ -92,24 +92,34 @@ def run_comparison(engine, problem, lane_outputs, ledger=None):
             "report": _render(engine, comparison, metrics)}
 
 
+# Which op gets which rule-outcome check, and where the actual value lives.
+_RULE_OP_KEY = {"score": "pruned", "refine": "refused"}
+
+
 def score_adherence(claimed, replayed):
     """Did the critic's claimed rule-outcomes match the deterministic replay?
 
-    `claimed[i]` may carry `pruned`/`refused` claims; `replayed[i]` is the actual
-    op result. Adherence is Measured (replay is deterministic); the thought
-    content and scores themselves stay Asserted and are not graded here.
+    The set of checks is derived from the REPLAY (every score/refine op has a
+    rule outcome), not from which claims the critic chose to submit — so a critic
+    cannot score 1.0 by omitting claims on the ops it got wrong. A missing claim
+    on a rule-governed op is itself a violation. Adherence is Measured (replay is
+    deterministic); the thought content and scores stay Asserted and are not graded.
     """
     checks = 0
     violations = []
-    for i, claim in enumerate(claimed):
-        actual = replayed[i] if i < len(replayed) else {}
-        for key in ("pruned", "refused"):
-            if key in claim:
-                checks += 1
-                actual_val = bool(actual.get(key, False))
-                if bool(claim[key]) != actual_val:
-                    violations.append({"index": i, "op": actual.get("op"), "key": key,
-                                       "claimed": bool(claim[key]), "actual": actual_val})
+    for i, actual in enumerate(replayed):
+        key = _RULE_OP_KEY.get(actual.get("op"))
+        if key is None:
+            continue
+        checks += 1
+        actual_val = bool(actual.get(key, False))
+        claim = claimed[i] if i < len(claimed) else {}
+        if key not in claim:
+            violations.append({"index": i, "op": actual.get("op"), "key": key,
+                               "claimed": None, "actual": actual_val, "reason": "no claim"})
+        elif bool(claim[key]) != actual_val:
+            violations.append({"index": i, "op": actual.get("op"), "key": key,
+                               "claimed": bool(claim[key]), "actual": actual_val})
     adherence = 1.0 if checks == 0 else (checks - len(violations)) / checks
     return {"adherence": adherence, "violations": violations, "checks": checks}
 
@@ -148,10 +158,16 @@ def _render(engine, comparison, metrics):
         lines.append(f"| {lane} | {info['verdict']} | {info['label']} |")
     for lane, m in metrics.items():
         lines.append("")
-        lines.append(f"{lane}: agreement {m['agreement']:.3f} "
-                     f"(95% CI {m['wilson_lo']:.3f}-{m['wilson_hi']:.3f}), "
-                     f"coverage {m['coverage']:.3f}, n={m['n']}, "
-                     f"oracle_unknown={m['oracle_unknown']}")
+        if m["n"] == 0:
+            # No benchmark set_id: a single ad-hoc comparison. An agreement rate
+            # needs a benchmark; show the per-lane label above, not a false 0%.
+            lines.append(f"{lane}: single comparison — no benchmark set_id, so no "
+                         f"agreement rate (see the label above).")
+        else:
+            lines.append(f"{lane}: agreement {m['agreement']:.3f} "
+                         f"(95% CI {m['wilson_lo']:.3f}-{m['wilson_hi']:.3f}), "
+                         f"coverage {m['coverage']:.3f}, n={m['n']}, "
+                         f"oracle_unknown={m['oracle_unknown']}")
     return "\n".join(lines)
 
 

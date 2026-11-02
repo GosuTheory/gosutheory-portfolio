@@ -159,7 +159,10 @@ class _FOLParser:
         self._expect("COMMA")
         const = z3.Const(var[2], self.ctx.sort)
         self.scope.append({var[2]: const})
-        body = self._unary()
+        # Quantifier scope extends maximally to the right (standard convention):
+        # `forall X, P(X) -> Q(X)` binds X in both. Parse the body at the lowest
+        # precedence, not as a tight unary, so the bound var is not left free.
+        body = self._iff()
         self.scope.pop()
         if kw[2] == "forall":
             return z3.ForAll([const], body)
