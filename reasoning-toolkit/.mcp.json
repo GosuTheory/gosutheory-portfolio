@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "formal_logic": {
+      "command": "python",
+      "args": ["-m", "reasoning_servers.formal_logic"],
+      "env": { "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/servers" }
+    },
+    "graph_of_thought": {
+      "command": "python",
+      "args": ["-m", "reasoning_servers.graph_of_thought"],
+      "env": { "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/servers" }
+    },
+    "ledger": {
+      "command": "python",
+      "args": ["-m", "reasoning_servers.ledger"],
+      "env": {
+        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/servers",
+        "REASONING_LEDGER_DB": "${CLAUDE_PLUGIN_DATA}/ledger.db"
+      }
+    },
+    "reasoning_remote": {
+      "type": "http",
+      "url": "${REASONING_SERVICES_URL}",
+      "headers": { "Authorization": "Bearer ${REASONING_SERVICES_TOKEN}" }
+    }
+  }
+}

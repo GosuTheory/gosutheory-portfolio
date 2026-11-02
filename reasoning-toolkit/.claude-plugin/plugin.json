@@ -1,0 +1,6 @@
+{
+  "name": "reasoning-toolkit",
+  "version": "0.1.0",
+  "description": "Compare reasoning-engine lanes (remote / local / subagent) against deterministic oracles. Vertical slice: formal-logic (Z3 oracle) + graph-of-thought (rule-adherence).",
+  "author": "GosuTheory"
+}
